@@ -221,6 +221,74 @@ func (t *SimpleChaincode) createSite(stub shim.ChaincodeStubInterface, args []st
 	}
 }
 
+func (t *SimpleChaincode) createNews(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
+	fmt.Println("Creating site")
+
+	if len(args) != 7 {
+		fmt.Println("error invalid arguments")
+		return nil, errors.New("Incorrect number of arguments. Expecting 7")
+	}
+	newsId := args[0]
+	newsTitle := args[1]
+	siteId := args[2]
+	newsContent := args[3]
+	newsDigest := args[4]
+	newsAuthor := args[5]
+	newsDate := args[6]
+
+
+	// Build an site object
+	//var site = Site{SiteId: siteId, SiteName: siteName}
+	var news = News{NewsId: newsId,NewsTitle: newsTitle,SiteId: siteId,NewsContent: newsContent,NewsDigest: newsDigest,NewsAuthor: newsAuthor,NewsDate: newsDate}
+	newsBytes, err := json.Marshal(&news)
+	if err != nil {
+		fmt.Println("error creating news" + news.NewsId)
+		return nil, errors.New("Error creating account " + news.NewsId)
+	}
+
+	fmt.Println("Attempting to get state of any existing news for " + news.NewsId)
+	existingBytes, err := stub.GetState(newsPrefix + news.NewsId)
+	if err == nil { //news exists
+
+		var existingNews News
+		err = json.Unmarshal(existingBytes, &existingNews)
+		if err != nil {
+			fmt.Println("Error unmarshalling news " + news.NewsId + "\n--->: " + err.Error())
+
+			if strings.Contains(err.Error(), "unexpected end") {
+				fmt.Println("No data means existing news found for " + news.NewsId + ", initializing news.")
+				err = stub.PutState(newsPrefix + news.NewsId, newsBytes)
+
+				if err == nil {
+					fmt.Println("created news" + newsPrefix + news.NewsId)
+					return nil, nil
+				} else {
+					fmt.Println("failed to create initialize news for " + news.NewsId)
+					return nil, errors.New("failed to initialize an news for " + news.NewsId + " => " + err.Error())
+				}
+			} else {
+				return nil, errors.New("Error unmarshalling existing news " + news.NewsId)
+			}
+		} else {
+			fmt.Println("News already exists for " + news.NewsId + " " + news.NewsTitle)
+			return nil, errors.New("Can't reinitialize existing news " + news.NewsId)
+		}
+	} else {
+
+		fmt.Println("No existing news found for " + news.NewsId + ", initializing news.")
+		err = stub.PutState(newsPrefix + news.NewsId, newsBytes)
+
+		if err == nil {
+			fmt.Println("created news" + newsPrefix + news.NewsId)
+			return nil, nil
+		} else {
+			fmt.Println("failed to create initialize news for " + news.NewsId)
+			return nil, errors.New("failed to initialize an news for " + news.NewsId + " => " + err.Error())
+		}
+
+	}
+}
+
 func (t *SimpleChaincode) createAccount(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
 	fmt.Println("Creating account")
 
@@ -570,6 +638,23 @@ func GetSite(siteId string, stub shim.ChaincodeStubInterface) (Site, error) {
 	return site, nil
 }
 
+func GetNews(newsId string, stub shim.ChaincodeStubInterface) (News, error) {
+	var news News
+	newsBytes, err := stub.GetState(newsPrefix + newsId)
+	if err != nil {
+		fmt.Println("News not found " + newsId)
+		return news, errors.New("News not found " + newsId)
+	}
+
+	err = json.Unmarshal(newsBytes, &news)
+	if err != nil {
+		fmt.Println("Error unmarshalling news " + newsId + "\n err:" + err.Error())
+		return news, errors.New("Error unmarshalling news " + newsId)
+	}
+
+	return news, nil
+}
+
 
 // Still working on this one
 func (t *SimpleChaincode) transferPaper(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
@@ -814,6 +899,21 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 			fmt.Println("All success, returning the site")
 			return siteBytes, nil
 		}
+  } else if function == "GetNews" {
+			fmt.Println("Getting the news")
+			news, err := GetNews(args[0], stub)
+			if err != nil {
+				fmt.Println("Error from getNews")
+				return nil, err
+			} else {
+				newsBytes, err1 := json.Marshal(&news)
+				if err1 != nil {
+					fmt.Println("Error marshalling the news")
+					return nil, err1
+				}
+				fmt.Println("All success, returning the news")
+				return newsBytes, nil
+			}
 	} else {
 		fmt.Println("Generic Query call")
 		bytes, err := stub.GetState(args[0])
@@ -841,6 +941,8 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function stri
 		return t.createAccount(stub, args)
 	} else if function == "createSite" {
 		return t.createSite(stub, args)
+	} else if function == "createNews" {
+		return t.createNews(stub, args)
 	}
 
 	return nil, errors.New("Received unknown function invocation: " + function)
